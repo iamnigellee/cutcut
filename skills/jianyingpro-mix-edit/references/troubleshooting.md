@@ -4,79 +4,120 @@
 
 Most common cause: **剪映 caches the draft list at startup.** A draft folder dropped in while 剪映 is running is invisible until restart.
 
-Fix:
 ```bash
 pkill -x JianyingPro
 sleep 1
 open -a JianyingPro
 ```
 
-If it still doesn't appear:
+If still not visible:
 
-1. Confirm the draft folder is actually under the path 剪映 is reading from. The default is `~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/`, but the user may have moved it via 剪映 → 全局设置 → 草稿位置. Verify with:
-   ```bash
-   defaults read com.lveditor.JianyingPro 2>/dev/null | grep -i draft
-   ```
-2. Confirm both `draft_content.json` and `draft_meta_info.json` exist in the folder.
-3. Open `draft_meta_info.json` and verify `draft_fold_path` and `draft_root_path` are absolute and correct for this machine.
-4. Look for the draft folder name itself with weird characters; rename to ASCII-only as a test.
+1. Confirm the draft is under the path 剪映 reads. Default is `~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/`. The user may have changed it via 剪映 → 全局设置 → 草稿位置.
+2. Confirm both `draft_content.json` and `draft_meta_info.json` exist.
+3. Open `draft_meta_info.json` and verify `draft_fold_path` and `draft_root_path` are correct absolute paths for this machine.
+4. Test with an ASCII-only `draft_name` to rule out encoding issues.
 
-## 剪映 opens but says "无法读取媒体" / "Media unavailable"
+## 剪映 says "无法读取媒体" / "Media unavailable"
 
-- The media file path in `draft_content.json` is wrong (typo, moved file, relative). Open the JSON and grep for the path.
-- The file has a macOS quarantine xattr and 剪映 refuses to open it:
+- Path is wrong, moved, or relative. Grep `draft_content.json` for the path.
+- macOS quarantine xattr on a downloaded file:
   ```bash
   xattr -d com.apple.quarantine "<file>"
   ```
-- The first time 剪映 reads files outside `~/Movies`, macOS prompts for Files-and-Folders permission. Approve it (System Settings → Privacy & Security → Files and Folders → JianyingPro). To avoid this entirely, copy media into the draft folder.
+- 剪映 needs Files-and-Folders permission for the source directory the first time. System Settings → Privacy & Security → Files and Folders → JianyingPro. Approve, restart 剪映.
 
 ## `pyJianYingDraft` import fails
 
 ```bash
-python3 -m pip install --user pyJianYingDraft
+python3 -m pip install --user -r scripts/requirements.txt
 ```
 
-If `pip` is missing:
+If multiple Pythons are installed (system + Homebrew + asdf), use the absolute path of the one you want and install with that interpreter.
+
+## `edge-tts` import fails or hangs
+
 ```bash
-python3 -m ensurepip --user
+python3 -m pip install --user edge-tts
 ```
 
-If you have multiple Python interpreters (e.g. system Python + Homebrew + asdf), make sure the same interpreter is used for installation and for running the script. Check with `which -a python3` and use the absolute path.
+If `tts.py` hangs forever: edge-tts needs network access to Microsoft's Edge TTS endpoint. Check connectivity. There's no offline fallback.
 
-## `ffprobe` not found
+If edge-tts returns "no audio data": the voice ID is wrong or temporarily unavailable. Try `edge-tts --list-voices | grep zh-CN` to confirm and pick another.
+
+## `ffmpeg` / `ffprobe` not found
 
 ```bash
 brew install ffmpeg
 ```
 
-The skill uses `ffprobe` (bundled with ffmpeg) to read width / height / duration / rotation from media. There is no fallback.
+The skill needs:
+- `ffprobe` for media probing in `probe_media.py`.
+- `ffmpeg` for SFX synthesis in `generate_sfx.py`.
 
-## 剪映 crashes on opening the draft
+Both ship together with `ffmpeg`. There's no fallback.
 
-Almost always a malformed `draft_content.json`. Common causes:
+## SFX sounds wrong / too soft / too loud
 
-- A required empty array was omitted from `materials` (e.g. `materials.audio_fades`). The full list of buckets must exist.
-- A segment is missing `extra_material_refs`, `common_keyframes`, or `keyframe_refs`.
-- Top-level `duration` is `0` or shorter than the longest segment.
+The synthesis recipes are in `assets/sfx_manifest.json`. Each is a single ffmpeg lavfi source + filter chain. Edit the recipe (e.g. raise `volume=0.5` to `volume=0.7`) and run:
 
-Fix: re-run `build_draft.py` so pyJianYingDraft regenerates from its template. Don't hand-edit unless you know what you're doing.
+```bash
+python3 scripts/generate_sfx.py --force
+```
+
+Forces regeneration of all files. Re-run `build_draft.py` to embed the new versions.
+
+If you want a category that isn't synthesizable (applause, laughter, ambient rain): there is no shortcut. Use 剪映's built-in audio library after the draft opens.
+
+## `generate_sfx.py` fails with ffmpeg error
+
+The error is printed to stderr. Common causes:
+- Old ffmpeg without `lavfi` source (very old; reinstall via Homebrew).
+- Missing `vibrato` / `afade` / `anoisesrc` filter (extremely rare; reinstall ffmpeg).
+- Output directory not writable.
+
+Run `ffmpeg -filters | grep <filter>` to confirm the filter is available.
+
+## SFX timing drifts vs. voiceover
+
+Symptoms: ding lands a beat after the punchline, whoosh is half a second early.
+
+Causes:
+- `vo.json` is built from edge-tts WordBoundary events; for very fast speech rates (`+30%` and above) the timing accuracy degrades.
+- Punctuation (commas) doesn't have its own WordBoundary event, so commas inside a sentence are interpolated, not measured.
+
+Mitigations:
+- Use `--rate -5%` to `+10%` for best timing accuracy.
+- Round SFX `at_s` to sentence boundaries, not mid-sentence words, when possible.
+- After the draft opens, nudge SFX positions by a few frames inside 剪映 — fast and reliable.
+
+## 剪映 crashes opening the draft
+
+Almost always malformed `draft_content.json`. `pyJianYingDraft` produces well-formed JSON, so a crash usually means:
+
+- Hand-edit introduced a bug → re-run `build_draft.py`.
+- A required empty array was lost → re-run `build_draft.py`.
+- Top-level `duration` is `0` because all clips somehow got skipped → check the build report's `duration_s`.
+
+Don't hand-edit `draft_content.json` unless you understand `references/draft_format.md`.
+
+## TTS output is in the wrong language
+
+edge-tts auto-detects from the voice. If the voice is `zh-CN-*`, the script must be Chinese. If you mix English in a Chinese voice it's pronounced phonetically (sometimes badly). For mixed-language scripts:
+
+- Wrap English chunks in `<lang xml:lang="en-US">…</lang>` and use SSML mode (see `tts_styles.md`).
+- Or split the script into language-pure chunks and TTS each separately, concatenate with ffmpeg.
 
 ## Draft total duration looks wrong
 
-`build_draft.py` reports `duration_s` in its JSON output. Sanity-check it against the sum of clip lengths you intended. If a clip's `trim_end_s` exceeds the source duration the script clamps silently to source length — re-probe with `scripts/probe_media.py <path>` to see the true source duration.
+`build_draft.py` prints `duration_s`. It's the sum of clip durations on the main track, ignoring trailing silence in the voiceover. If your VO is longer than the video, the tail of the VO plays over a black frame in 剪映 — extend the last clip or add a still image to fill.
 
-## BGM ends abruptly mid-project
+## "out of disk" during SFX generation
 
-You set `loop: false` and the BGM is shorter than the project. Either set `loop: true`, or pick a longer BGM, or add a fade-out manually inside 剪映.
+The full library is ~1 MB total (13 mono WAVs at 44.1 kHz). If you hit a disk-full error, it's not the SFX. Check `/tmp` (where TTS output may live) and `~/Movies/JianyingPro/`.
 
-## Voiceover starts at the wrong time
+## Different macOS user / shared draft
 
-The script always places the voiceover at `target_start = 0`. To delay it, either pad the front of the voiceover audio with silence (e.g. via ffmpeg `adelay`), or move the segment manually inside 剪映.
+If you generate the draft as user A and another user B opens 剪映, the absolute paths in `draft_content.json` won't resolve. Two fixes:
 
-## 剪映 6+ doesn't recognize the draft after I edit it from outside
-
-剪映 6.x re-saves drafts in an encrypted form. Once you save a draft inside 剪映 6+, third-party tools (including this skill) can no longer read or modify it. Workflow: always **regenerate from spec** rather than round-tripping; treat 剪映 as the final-mile editor.
-
-## Export is greyed out / missing in 剪映 7
-
-剪映 7 hides export controls in some builds. This is upstream behavior unrelated to draft generation. Workarounds documented in 剪映 community forums; not in scope for this skill.
+- Generate again as user B with their paths.
+- Copy media files into the draft folder itself, then sed-replace paths in `draft_content.json` to relative-from-folder. (剪映 does not officially support relatives; this is fragile.)

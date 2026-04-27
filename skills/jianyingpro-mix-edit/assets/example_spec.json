@@ -8,12 +8,13 @@
     {"path": "/Users/you/Pictures/cover.jpg", "duration_s": 3.0}
   ],
   "voiceover": {
-    "path": "/Users/you/Audio/narration.mp3",
+    "path": "/Users/you/vo_out/vo.mp3",
     "volume": 1.0
   },
-  "bgm": {
-    "path": "/Users/you/Audio/bgm.mp3",
-    "volume": 0.3,
-    "loop": true
-  }
+  "sfx": [
+    {"category": "transition.whoosh.fast", "at_s": 0.0,  "volume": 0.5},
+    {"category": "emphasis.ding.bright",   "at_s": 6.4,  "volume": 0.6},
+    {"category": "transition.swoosh",      "at_s": 11.5, "volume": 0.45},
+    {"category": "meta.bell.chapter",      "at_s": 14.5, "volume": 0.5}
+  ]
 }

@@ -1,146 +1,224 @@
 ---
 name: jianyingpro-mix-edit
-description: Generate a 剪映专业版 (JianYing Pro) draft on macOS that stitches multiple video clips together with a voiceover track and a background-music track, then opens 剪映 to that draft for the user to fine-tune and export. Use whenever the user asks to "做混剪 / 多素材剪辑 / 拼视频 / 配音配乐 / batch edit clips / mix clips with VO and BGM" and intends to finish in 剪映 on a Mac. Triggers on keywords: 剪映, JianYing, 混剪, 配音, 配乐, BGM, 草稿, multi-clip mix, voiceover, background music, draft, macOS video editing.
+description: Generate a 剪映专业版 (JianYing Pro) draft on macOS that stitches multiple video clips together, optionally synthesizes a voiceover from a text script via edge-tts, and auto-places sound effects (whoosh / ding / boom / etc.) at semantically appropriate moments. The draft opens directly in 剪映 for the user to fine-tune transitions, captions, color, and to add BGM from 剪映's built-in music library before exporting. Use whenever the user asks to "做混剪 / 多素材剪辑 / 配音配音效 / 文案稿剪片 / 用 TTS 念稿 / 加音效 / 拼视频" and intends to finish in 剪映 on a Mac. Triggers on keywords: 剪映, JianYing, 混剪, 配音, 配音效, TTS, 音效, sfx, voiceover, 文案稿, 草稿, multi-clip mix, macOS video editing.
 license: MIT
-version: 0.1.0
+version: 0.2.0
 ---
 
 # JianYing Pro 多素材混剪 Skill (macOS)
 
-This skill assembles a 剪映专业版 draft from a list of media files plus a voiceover and a BGM track, places it in 剪映's drafts directory, and opens 剪映 so the user can polish and export. It targets macOS only.
+This skill generates 剪映专业版 drafts on macOS for two related workflows:
+
+- **Mode A — Clips + Voiceover + SFX**: user has video clips ready, gives a narration script, the skill produces a TTS voiceover, places sound effects on the beats, and lays everything into a draft.
+- **Mode B — Script-driven cut**: user has a finished narration script and a pile of raw clips, no editing plan yet. The skill TTS's the script, returns sentence-level timing, and helps decide which clip plays during which sentence + where SFX go. Then builds the draft.
+
+In both modes the user finishes inside 剪映: transitions, captions, color, BGM, export. The skill **does not** handle BGM — 剪映 has a rich built-in music library and that's the right tool for the job.
 
 ## When to use
 
 Invoke this skill when the user wants to:
-- Splice N video clips end-to-end on the main video track.
-- Lay one voiceover (配音) audio track over the result.
-- Lay one BGM (配乐) track underneath, usually at lower volume, with optional looping.
-- Hand off the finished draft to 剪映 for human-in-the-loop fine-tuning (transitions, captions, color, export).
+- Stitch N video clips with TTS-generated narration over the top.
+- Auto-place sound effects (whoosh / ding / boom / pop) at scene transitions, punchlines, emphasis points.
+- Convert a finished script into a roughed-out draft that's 80% done before opening 剪映.
 
-If the user wants a fully headless render (no 剪映 GUI), this skill is the wrong tool — fall back to ffmpeg.
+If the user wants headless export (no 剪映 GUI), this skill is wrong — fall back to ffmpeg.
 
 ## Prerequisites — verify before running
 
-Run these checks once per session and tell the user what's missing:
-
 ```bash
-# 1. macOS
-test "$(uname)" = "Darwin" || echo "ABORT: this skill is macOS-only"
-
-# 2. JianYing installed
-test -d "/Applications/JianyingPro.app" || echo "MISSING: 剪映专业版"
-
-# 3. ffprobe (ffmpeg) for media probing
-command -v ffprobe || echo "MISSING: install with 'brew install ffmpeg'"
-
-# 4. Python 3.9+
+test "$(uname)" = "Darwin"                         || echo "ABORT: macOS only"
+test -d "/Applications/JianyingPro.app"            || echo "MISSING: 剪映专业版"
+command -v ffmpeg ffprobe                          || echo "MISSING: brew install ffmpeg"
 python3 --version
-
-# 5. pyJianYingDraft (the library this skill depends on)
-python3 -c "import pyJianYingDraft" 2>/dev/null || \
-  python3 -m pip install --user -r "$SKILL_DIR/scripts/requirements.txt"
+python3 -c "import pyJianYingDraft, edge_tts" 2>/dev/null \
+  || python3 -m pip install --user -r "$SKILL_DIR/scripts/requirements.txt"
 ```
 
-`$SKILL_DIR` here is the directory containing this `SKILL.md`. Resolve it from the skill's install path (e.g. `~/.claude/skills/jianyingpro-mix-edit`).
+`$SKILL_DIR` is the directory containing this `SKILL.md`. If the SFX library hasn't been generated yet, the build script regenerates it on demand — no separate setup step.
 
-## Workflow
+---
 
-### Step 1 — Gather inputs from the user
+## Mode A — Clips + Voiceover + SFX
 
-You need:
-- An ordered list of video clip absolute paths (the splice order).
-- One voiceover audio path (optional — skip if the user has none).
-- One BGM audio path (optional — skip if the user has none).
-- A draft name (default: ask, fall back to `mix_<YYYYMMDD_HHMMSS>`).
-- Canvas size (default: 1920x1080) and FPS (default: 30).
-- BGM volume (default: 0.3) and voiceover volume (default: 1.0).
-- Per-clip optional trim (`trim_start_s`, `trim_end_s`).
+The user has clips and a narration script.
 
-If anything is ambiguous (e.g. clip order, which file is VO vs BGM), **ask the user** with `AskUserQuestion` before proceeding. Do not guess at media intent.
+### Step 1 — Gather inputs
 
-### Step 2 — Write a spec JSON
+Ask if anything is unclear:
+- Ordered list of clip absolute paths.
+- Path to a `.txt` file with the narration script, **or** the script inline.
+- Voice preference: a natural-language description ("沉稳纪录片"/"轻快 vlog"/"young female") or a specific edge-tts voice ID. See `references/tts_styles.md`.
+- Canvas size + FPS (default 1920×1080 @ 30).
+- SFX intensity preference: "minimal" / "balanced" / "punchy" (controls SFX density: ~1 per 10s / ~1 per 5s / ~1 per 3s).
 
-Create a `mix_spec.json` (anywhere — `/tmp` is fine) following the schema in `references/spec_schema.md`. A complete example is at `assets/example_spec.json`. Minimum form:
+### Step 2 — TTS the script
+
+```bash
+python3 "$SKILL_DIR/scripts/tts.py" /tmp/script.txt /tmp/vo_out --voice zh-CN-YunjianNeural
+```
+
+Outputs:
+- `/tmp/vo_out/vo.mp3` — the audio.
+- `/tmp/vo_out/vo.srt` — word-level subtitle timings.
+- `/tmp/vo_out/vo.json` — sentence-level timings, the input you reason from.
+
+Read `vo.json`. Each sentence has `text`, `start_us`, `end_us`, `duration_us`.
+
+### Step 3 — Plan the SFX placements (your judgement)
+
+Read the `sentences` array. For each sentence decide whether a beat warrants an SFX. **Cap density** to user-chosen intensity (default ~1 per 5s). Pick categories from `assets/sfx_manifest.json`:
+
+| Beat type | Suggested category |
+|---|---|
+| Major scene change between sentences | `transition.whoosh.slow` or `transition.whoosh.fast` |
+| Subtle continuation, soft transition | `transition.swoosh` |
+| Punchline, reveal, joke landing | `emphasis.ding.bright` or `reaction.boing` |
+| Soft emphasis, gentle highlight | `emphasis.ding.soft` |
+| Short punctuation between thoughts | `emphasis.pop` or `meta.click.tick` |
+| Heavy reveal, dramatic moment | `impact.boom` or `impact.thud` |
+| Topic / chapter change | `meta.bell.chapter` or `meta.page.flip` |
+| Photo / freeze-frame | `meta.camera.shutter` |
+
+Default placement timing: **at the start of the next sentence**, not on top of speech. Tiny ticks/clicks can land mid-sentence at commas. Whooshes belong at sentence boundaries.
+
+If the user wants a real laugh track / applause / ambient rain — those are not in the synthesized library. Tell them to pick from 剪映's built-in audio library after the draft opens; flag the timestamp in your handoff.
+
+### Step 4 — Write the spec and build
 
 ```json
 {
-  "draft_name": "my_mix_20260427",
+  "draft_name": "vlog_20260427",
   "canvas": {"width": 1920, "height": 1080},
   "fps": 30,
   "clips": [
     {"path": "/Users/me/Videos/a.mp4"},
     {"path": "/Users/me/Videos/b.mp4", "trim_start_s": 2.0, "trim_end_s": 8.5}
   ],
-  "voiceover": {"path": "/Users/me/Audio/vo.mp3", "volume": 1.0},
-  "bgm": {"path": "/Users/me/Audio/bgm.mp3", "volume": 0.3, "loop": true}
+  "voiceover": {"path": "/tmp/vo_out/vo.mp3", "volume": 1.0},
+  "sfx": [
+    {"category": "transition.whoosh.fast", "at_s": 1.84, "volume": 0.5},
+    {"category": "emphasis.ding.bright",   "at_s": 5.20, "volume": 0.55}
+  ]
 }
 ```
-
-### Step 3 — Build the draft
 
 ```bash
 python3 "$SKILL_DIR/scripts/build_draft.py" /tmp/mix_spec.json
 ```
 
-The script:
-1. Probes each media file with `ffprobe` to get duration and dimensions (handles rotation metadata).
-2. Uses `pyJianYingDraft` to generate `draft_content.json` and `draft_meta_info.json`.
-3. Writes the draft folder under `~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/<draft_name>/`.
-4. Prints a JSON report with `draft_path`, total `duration_us`, and clip count.
+`build_draft.py` auto-runs `generate_sfx.py` if any referenced SFX file is missing. ffmpeg synthesizes them on the fly (~2s for the full library).
 
-If 剪映's draft directory has been moved (Settings → 全局设置 → 草稿位置), pass `--draft-root /custom/path` to the script.
-
-### Step 4 — Open 剪映
+### Step 5 — Open 剪映
 
 ```bash
 bash "$SKILL_DIR/scripts/open_jianying.sh" "<draft_name>"
 ```
 
-The script does `pkill -x JianyingPro` then `open -a JianyingPro`. The relaunch is necessary because **剪映 caches the draft list** and won't show a freshly-written draft until restart. Warn the user that any unsaved work in 剪映 will be lost.
+Restarts 剪映 (it caches the draft list). Warn the user any unsaved 剪映 work will be lost.
 
-### Step 5 — Hand off to the user
+### Step 6 — Hand off
 
 Tell the user:
-- Draft name and folder path.
-- That the new draft should be visible at the top of 剪映's "草稿" list.
-- That export must be done manually inside 剪映 (no headless export on macOS — 剪映 disables it).
-- If the draft does not appear: see `references/troubleshooting.md`.
+- Draft name + path.
+- Total duration.
+- Where you placed each SFX and why (1 line each).
+- That BGM should be added inside 剪映 (音频 → 音乐).
+- Any "real" SFX you flagged (applause/laughter) that they should drag in from 剪映's audio library.
 
-## Inputs that need clarification
+---
 
-If the user gives a vague request like "把这些视频拼一下加段音乐", ask:
-1. Order of clips? (You may suggest filename-alphabetical and confirm.)
-2. Is there a voiceover, or just BGM?
-3. Target aspect (16:9 / 9:16 / 1:1)?
-4. Trim any clip, or use full length?
+## Mode B — Script-driven cut
 
-## Common adjustments
+User has narration text and a clip folder, no editing plan yet.
 
-- **Vertical (TikTok/抖音) format**: set `canvas: {"width": 1080, "height": 1920}`. The script does not auto-crop — clips with mismatched aspect will letterbox/pillarbox in 剪映 until the user adjusts scale in the GUI.
-- **Photos as clips**: supported. For a still image, set `"duration_s": 3.0` on the clip entry; the script holds the photo for that many seconds.
-- **No voiceover or no BGM**: omit the `voiceover` or `bgm` key entirely.
-- **Multiple BGM tracks (e.g. swap halfway)**: not supported by the spec; build the draft, then split inside 剪映.
+### Step 1 — Gather inputs
 
-## When something fails
+- Path to script `.txt`.
+- Path to folder containing raw clips (or an explicit list).
+- Voice preference.
+- Canvas + FPS.
+- SFX intensity preference.
 
-- `pyJianYingDraft` import fails → run `pip install pyJianYingDraft` (script tries this automatically with `--user`).
-- ffprobe missing → `brew install ffmpeg`.
-- Draft does not appear in 剪映 → quit 剪映 fully (`pkill -x JianyingPro`) and reopen. See `references/troubleshooting.md` for more.
-- 剪映 says "无法读取媒体" → the media file may have macOS quarantine xattr; strip with `xattr -d com.apple.quarantine <file>`.
-- 剪映 6.x and above: generation works fine; only **loading** existing 6.x-encrypted drafts is broken in third-party tools, which doesn't affect this skill since we always write fresh drafts.
+### Step 2 — TTS first
 
-## Reference files
+Same `tts.py` invocation as Mode A. Get `vo.json` with sentence-level timings.
 
-Consult on demand — do not load all of these eagerly:
+### Step 3 — Probe and list the clips
 
-- `references/spec_schema.md` — full spec JSON schema with every optional field.
-- `references/draft_format.md` — internals of `draft_content.json` / `draft_meta_info.json` for advanced customization beyond what `build_draft.py` exposes (e.g. transitions, text overlays, keyframes).
-- `references/troubleshooting.md` — diagnostic flowchart for when 剪映 misbehaves.
+```bash
+for f in /path/to/clips/*; do
+  python3 "$SKILL_DIR/scripts/probe_media.py" "$f"
+done
+```
+
+Build a clip table: filename, duration, kind (video/image), width×height. Read filenames for semantic hints (e.g. `01_morning_commute.mp4` clearly maps to morning-commute sentences).
+
+If filenames are uninformative, ask the user for one-line descriptions per clip. Don't guess randomly — wrong mapping wastes their time more than asking.
+
+### Step 4 — Map sentences to clips
+
+You decide. Output a table back to the user before building, e.g.:
+
+```
+sentence 1 (0.0s–2.4s, "今天我们来到深圳湾...")  →  03_skyline_pan.mp4 (full)
+sentence 2 (2.4s–5.1s, "天气特别好...")         →  07_blue_sky.mp4 (trim 0–2.7s)
+sentence 3 (5.1s–8.3s, "海风迎面吹来...")        →  09_seabreeze.mp4 + 11_waves.mp4
+```
+
+Rules of thumb:
+- Each clip's effective duration must equal its sentence's duration. Trim if longer; concat multiple clips if shorter.
+- For images (still photos), `duration_s` defaults to 3s — adjust to match sentence length.
+- Avoid same clip back-to-back unless the user wants it.
+
+User confirms / edits the mapping. Don't proceed without confirmation if you had to guess.
+
+### Step 5 — Plan SFX
+
+Same logic as Mode A Step 3, but you now know the clip boundaries too. Place transition SFX at clip cuts that coincide with sentence breaks (best landing). Place emphasis SFX inside sentences at their punchline.
+
+### Step 6 — Write spec, build, open 剪映
+
+Same as Mode A Steps 4–6.
+
+---
+
+## Voice selection
+
+See `references/tts_styles.md` for the full voice + style table. Quick defaults:
+
+| User intent | Voice | Notes |
+|---|---|---|
+| 沉稳纪录片 / 体育 / 男声旁白 | `zh-CN-YunjianNeural` | Default. Deep male. |
+| 通用女声 | `zh-CN-XiaoxiaoNeural` | Versatile. Supports SSML `mstts:express-as` styles. |
+| 年轻男声 / 口语 / vlog | `zh-CN-YunxiNeural` | Casual male. |
+| 温柔女声 | `zh-CN-XiaoyiNeural` | Soft female. |
+
+For style modulation (cheerful / sad / news / customerservice / affectionate), pass `--rate +5%` for upbeat or `--rate -10%` for slower delivery. SSML express-as requires you to wrap the script in SSML tags before passing — see the reference.
+
+## What this skill does NOT do
+
+- ❌ Background music (BGM): use 剪映's built-in music library.
+- ❌ Real recorded SFX (applause, laughter, ambient rain): use 剪映's audio library; flag the timestamp.
+- ❌ Headless export: 剪映 disables third-party draft export on macOS. User exports manually.
+- ❌ Captions / subtitle text overlays: only the SRT file is produced; user imports it in 剪映 (字幕 → 导入字幕) or auto-generates inside 剪映.
+- ❌ Color grading, transitions, effects: 剪映 GUI.
+- ❌ Picture-in-picture, multi-track video composites: out of scope.
+
+## Reference files (load on demand)
+
+- `references/spec_schema.md` — every spec.json field with defaults and validation.
+- `references/script_workflow.md` — Mode B detailed walkthrough with example.
+- `references/tts_styles.md` — voice IDs, rate/volume controls, SSML for style.
+- `references/draft_format.md` — internals of `draft_content.json` for advanced customization.
+- `references/troubleshooting.md` — diagnostic flowchart for failures.
 - `assets/example_spec.json` — runnable example spec.
+- `assets/sfx_manifest.json` — all 13 SFX categories with their ffmpeg recipes.
 
 ## Bundled tools
 
-- `scripts/build_draft.py` — main entry point. Reads a spec, writes a draft.
-- `scripts/probe_media.py` — standalone ffprobe wrapper; useful if you want to inspect a file before adding it.
-- `scripts/open_jianying.sh` — restarts 剪映 so the new draft shows up.
-- `scripts/requirements.txt` — pip dependencies.
+- `scripts/tts.py` — script.txt → vo.mp3 + vo.srt + vo.json (edge-tts).
+- `scripts/probe_media.py` — ffprobe wrapper, JSON output.
+- `scripts/generate_sfx.py` — ffmpeg-synthesized SFX library, idempotent.
+- `scripts/build_draft.py` — spec.json → 剪映 draft folder.
+- `scripts/open_jianying.sh` — restart 剪映 to refresh draft list.
+- `scripts/requirements.txt` — `edge-tts`, `pyJianYingDraft`.

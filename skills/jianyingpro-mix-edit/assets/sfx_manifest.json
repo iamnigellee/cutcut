@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "synthesis": "ffmpeg",
+  "license": "Generated procedurally with ffmpeg lavfi sources. Output waveforms are not subject to third-party copyright; the recipes themselves are MIT-licensed under this skill.",
+  "categories": {
+    "transition.whoosh.fast": {
+      "filename": "whoosh_fast.wav",
+      "ffmpeg_input": "anoisesrc=color=pink:duration=0.45:amplitude=0.7",
+      "ffmpeg_filter": "highpass=f=300,lowpass=f=2500,afade=t=in:d=0.08,afade=t=out:st=0.18:d=0.27,volume=0.7",
+      "intent": "Fast whoosh — for tight cuts and quick scene flips",
+      "approx_duration_s": 0.45
+    },
+    "transition.whoosh.slow": {
+      "filename": "whoosh_slow.wav",
+      "ffmpeg_input": "anoisesrc=color=pink:duration=1.0:amplitude=0.6",
+      "ffmpeg_filter": "highpass=f=200,lowpass=f=2000,afade=t=in:d=0.3,afade=t=out:st=0.5:d=0.5,volume=0.6",
+      "intent": "Long whoosh — for major scene transitions",
+      "approx_duration_s": 1.0
+    },
+    "transition.swoosh": {
+      "filename": "swoosh.wav",
+      "ffmpeg_input": "anoisesrc=color=white:duration=0.7:amplitude=0.5",
+      "ffmpeg_filter": "highpass=f=500,lowpass=f=4000,afade=t=in:d=0.15,afade=t=out:st=0.3:d=0.4,volume=0.5",
+      "intent": "Subtle airy swoosh — gentle transition",
+      "approx_duration_s": 0.7
+    },
+    "emphasis.ding.bright": {
+      "filename": "ding_bright.wav",
+      "ffmpeg_input": "sine=frequency=1200:duration=0.5",
+      "ffmpeg_filter": "volume=0.6,afade=t=out:st=0.03:d=0.47",
+      "intent": "Bright bell — punchline / hard emphasis",
+      "approx_duration_s": 0.5
+    },
+    "emphasis.ding.soft": {
+      "filename": "ding_soft.wav",
+      "ffmpeg_input": "sine=frequency=800:duration=0.6",
+      "ffmpeg_filter": "volume=0.5,afade=t=out:st=0.05:d=0.55",
+      "intent": "Soft chime — gentle emphasis",
+      "approx_duration_s": 0.6
+    },
+    "emphasis.pop": {
+      "filename": "pop.wav",
+      "ffmpeg_input": "sine=frequency=600:duration=0.15",
+      "ffmpeg_filter": "volume=0.6,afade=t=out:st=0.02:d=0.13",
+      "intent": "Quick pop — punctuation between thoughts",
+      "approx_duration_s": 0.15
+    },
+    "impact.boom": {
+      "filename": "boom.wav",
+      "ffmpeg_input": "sine=frequency=60:duration=1.0",
+      "ffmpeg_filter": "lowpass=f=200,volume=0.8,afade=t=out:st=0.1:d=0.9",
+      "intent": "Low boom — dramatic impact / reveal",
+      "approx_duration_s": 1.0
+    },
+    "impact.thud": {
+      "filename": "thud.wav",
+      "ffmpeg_input": "anoisesrc=color=brown:duration=0.5:amplitude=0.9",
+      "ffmpeg_filter": "lowpass=f=300,volume=0.7,afade=t=out:st=0.05:d=0.45",
+      "intent": "Heavy thud — physical hit",
+      "approx_duration_s": 0.5
+    },
+    "reaction.boing": {
+      "filename": "boing.wav",
+      "ffmpeg_input": "sine=frequency=400:duration=0.6",
+      "ffmpeg_filter": "vibrato=f=12:d=0.9,volume=0.5,afade=t=out:st=0.2:d=0.4",
+      "intent": "Cartoon boing — comedic / surprise",
+      "approx_duration_s": 0.6
+    },
+    "meta.click.tick": {
+      "filename": "click_tick.wav",
+      "ffmpeg_input": "anoisesrc=color=white:duration=0.06:amplitude=0.6",
+      "ffmpeg_filter": "highpass=f=2000,volume=0.5,afade=t=out:st=0.01:d=0.05",
+      "intent": "Tiny tick — bullet point / list item",
+      "approx_duration_s": 0.06
+    },
+    "meta.page.flip": {
+      "filename": "page_flip.wav",
+      "ffmpeg_input": "anoisesrc=color=white:duration=0.4:amplitude=0.5",
+      "ffmpeg_filter": "highpass=f=1500,lowpass=f=6000,afade=t=in:d=0.05,afade=t=out:st=0.15:d=0.25,volume=0.4",
+      "intent": "Paper page flip — chapter / topic break",
+      "approx_duration_s": 0.4
+    },
+    "meta.camera.shutter": {
+      "filename": "camera_shutter.wav",
+      "ffmpeg_input": "anoisesrc=color=white:duration=0.25:amplitude=0.5",
+      "ffmpeg_filter": "highpass=f=1000,lowpass=f=5000,afade=t=in:d=0.005,afade=t=out:st=0.05:d=0.05,volume=0.5",
+      "intent": "Camera shutter — photo / freeze-frame moment",
+      "approx_duration_s": 0.25
+    },
+    "meta.bell.chapter": {
+      "filename": "bell_chapter.wav",
+      "ffmpeg_input": "sine=frequency=600:duration=1.5",
+      "ffmpeg_filter": "volume=0.5,afade=t=out:st=0.1:d=1.4",
+      "intent": "Soft sustained bell — major section change",
+      "approx_duration_s": 1.5
+    }
+  },
+  "not_synthesizable_use_jianying_library": [
+    "applause / 鼓掌",
+    "laughter / 笑声",
+    "human voices",
+    "complex ambient (rain, crowd, traffic)"
+  ]
+}

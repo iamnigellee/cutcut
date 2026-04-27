@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a 剪映专业版 draft on macOS from a mix-spec JSON.
 
-Spec schema (see references/spec_schema.md):
+Spec schema (full reference: references/spec_schema.md):
     {
       "draft_name": "my_mix",
       "canvas": {"width": 1920, "height": 1080},
@@ -12,18 +12,24 @@ Spec schema (see references/spec_schema.md):
         {"path": "/abs/photo.jpg", "duration_s": 3.0}
       ],
       "voiceover": {"path": "/abs/vo.mp3", "volume": 1.0},
-      "bgm": {"path": "/abs/bgm.mp3", "volume": 0.3, "loop": true}
+      "sfx": [
+        {"category": "transition.whoosh.fast", "at_s": 1.84, "volume": 0.5},
+        {"category": "emphasis.ding.bright",   "at_s": 5.20, "volume": 0.6}
+      ]
     }
+
+BGM is intentionally not supported — add background music inside 剪映 using
+its built-in music library. SFX categories are defined in
+assets/sfx_manifest.json and synthesized with scripts/generate_sfx.py.
 
 Usage:
     python3 build_draft.py <spec.json> [--draft-root <dir>]
-
-Prints a JSON report to stdout on success.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +37,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from probe_media import probe  # noqa: E402
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+SKILL_DIR = SCRIPT_DIR.parent
+SFX_MANIFEST_PATH = SKILL_DIR / "assets" / "sfx_manifest.json"
+SFX_DIR = SKILL_DIR / "assets" / "sfx"
 DEFAULT_DRAFT_ROOT = (
     Path.home() / "Movies/JianyingPro/User Data/Projects/com.lveditor.draft"
 )
@@ -42,7 +52,6 @@ def s_to_us(seconds: float) -> int:
 
 
 def _load_pyjy():
-    """Lazy import so --help works without the dependency installed."""
     try:
         import pyJianYingDraft as draft
         from pyJianYingDraft import Timerange, TrackType
@@ -52,6 +61,44 @@ def _load_pyjy():
             "Install it with:  python3 -m pip install --user pyJianYingDraft"
         )
     return draft, Timerange, TrackType
+
+
+def _ensure_sfx_files(categories_used: set[str]) -> dict[str, Path]:
+    """Resolve each used category to an absolute file path; auto-generate if missing."""
+    if not categories_used:
+        return {}
+    if not SFX_MANIFEST_PATH.exists():
+        raise FileNotFoundError(f"SFX manifest missing: {SFX_MANIFEST_PATH}")
+    manifest = json.loads(SFX_MANIFEST_PATH.read_text(encoding="utf-8"))
+    cats = manifest.get("categories", {})
+
+    unknown = categories_used - set(cats.keys())
+    if unknown:
+        known = ", ".join(sorted(cats.keys()))
+        raise ValueError(f"unknown sfx categories: {sorted(unknown)}\nKnown: {known}")
+
+    resolved: dict[str, Path] = {}
+    missing_files = []
+    for c in categories_used:
+        f = SFX_DIR / cats[c]["filename"]
+        resolved[c] = f
+        if not f.exists() or f.stat().st_size == 0:
+            missing_files.append(c)
+
+    if missing_files:
+        # Auto-run generate_sfx.py for the missing files.
+        print(f"Generating {len(missing_files)} missing SFX file(s)...", file=sys.stderr)
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT_DIR / "generate_sfx.py")],
+            capture_output=True, text=True,
+        )
+        if proc.returncode != 0:
+            sys.stderr.write(proc.stderr)
+            raise RuntimeError("generate_sfx.py failed; install ffmpeg with 'brew install ffmpeg'")
+        for c in missing_files:
+            if not resolved[c].exists():
+                raise RuntimeError(f"sfx file still missing after generation: {resolved[c]}")
+    return resolved
 
 
 def build(spec: dict, draft_root: Path) -> dict:
@@ -65,7 +112,9 @@ def build(spec: dict, draft_root: Path) -> dict:
         raise ValueError("spec.clips must be a non-empty list")
 
     voiceover = spec.get("voiceover")
-    bgm = spec.get("bgm")
+    sfx_entries = spec.get("sfx") or []
+
+    sfx_paths = _ensure_sfx_files({e["category"] for e in sfx_entries})
 
     draft_root.mkdir(parents=True, exist_ok=True)
     folder = draft.DraftFolder(str(draft_root))
@@ -80,8 +129,8 @@ def build(spec: dict, draft_root: Path) -> dict:
     script.add_track(TrackType.video, track_name="main_video")
     if voiceover:
         script.add_track(TrackType.audio, track_name="voiceover")
-    if bgm:
-        script.add_track(TrackType.audio, track_name="bgm")
+    if sfx_entries:
+        script.add_track(TrackType.audio, track_name="sfx")
 
     cursor_us = 0
     clip_reports = []
@@ -141,33 +190,26 @@ def build(spec: dict, draft_root: Path) -> dict:
         )
         script.add_segment(vo_seg, track_name="voiceover")
 
-    if bgm:
-        bgm_path = bgm["path"]
-        bgm_info = probe(bgm_path)
-        if bgm_info["kind"] != "audio":
-            raise ValueError(f"bgm {bgm_path} is not an audio file (kind={bgm_info['kind']})")
-        bgm_volume = float(bgm.get("volume", 0.3))
-        bgm_loop = bool(bgm.get("loop", True))
-
-        if bgm_loop and bgm_info["duration_us"] < total_us:
-            t = 0
-            while t < total_us:
-                seg_dur = min(bgm_info["duration_us"], total_us - t)
-                seg = draft.AudioSegment(
-                    bgm_path,
-                    Timerange(t, seg_dur),
-                    volume=bgm_volume,
-                )
-                script.add_segment(seg, track_name="bgm")
-                t += seg_dur
-        else:
-            seg_dur = min(bgm_info["duration_us"], total_us)
-            seg = draft.AudioSegment(
-                bgm_path,
-                Timerange(0, seg_dur),
-                volume=bgm_volume,
-            )
-            script.add_segment(seg, track_name="bgm")
+    sfx_reports = []
+    for j, e in enumerate(sfx_entries):
+        cat = e["category"]
+        at_us = s_to_us(float(e["at_s"]))
+        if at_us >= total_us:
+            sfx_reports.append({"index": j, "category": cat, "at_us": at_us, "status": "skipped_past_end"})
+            continue
+        sfx_file = sfx_paths[cat]
+        sfx_info = probe(str(sfx_file))
+        sfx_dur = min(sfx_info["duration_us"], total_us - at_us)
+        sfx_seg = draft.AudioSegment(
+            str(sfx_file),
+            Timerange(at_us, sfx_dur),
+            volume=float(e.get("volume", 0.5)),
+        )
+        script.add_segment(sfx_seg, track_name="sfx")
+        sfx_reports.append({
+            "index": j, "category": cat, "at_us": at_us,
+            "duration_us": sfx_dur, "file": str(sfx_file), "status": "added",
+        })
 
     script.save()
 
@@ -178,8 +220,9 @@ def build(spec: dict, draft_root: Path) -> dict:
         "duration_s": round(total_us / 1_000_000, 3),
         "clip_count": len(clips),
         "has_voiceover": bool(voiceover),
-        "has_bgm": bool(bgm),
+        "sfx_count": len(sfx_reports),
         "clips": clip_reports,
+        "sfx": sfx_reports,
     }
 
 

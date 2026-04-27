@@ -1,1 +1,2 @@
+edge-tts>=6.1.0
 pyJianYingDraft>=0.2.6
