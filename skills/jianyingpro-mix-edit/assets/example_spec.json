@@ -1,0 +1,19 @@
+{
+  "draft_name": "demo_mix",
+  "canvas": {"width": 1920, "height": 1080},
+  "fps": 30,
+  "clips": [
+    {"path": "/Users/you/Videos/clip_a.mp4"},
+    {"path": "/Users/you/Videos/clip_b.mp4", "trim_start_s": 2.0, "trim_end_s": 8.5},
+    {"path": "/Users/you/Pictures/cover.jpg", "duration_s": 3.0}
+  ],
+  "voiceover": {
+    "path": "/Users/you/Audio/narration.mp3",
+    "volume": 1.0
+  },
+  "bgm": {
+    "path": "/Users/you/Audio/bgm.mp3",
+    "volume": 0.3,
+    "loop": true
+  }
+}
