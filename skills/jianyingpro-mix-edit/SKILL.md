@@ -1,8 +1,6 @@
 ---
 name: jianyingpro-mix-edit
-description: Generate a 剪映专业版 (JianYing Pro) draft on macOS that stitches multiple video clips together, optionally synthesizes a voiceover from a text script via edge-tts, and auto-places sound effects (whoosh / ding / boom / etc.) at semantically appropriate moments. The draft opens directly in 剪映 for the user to fine-tune transitions, captions, color, and to add BGM from 剪映's built-in music library before exporting. Use whenever the user asks to "做混剪 / 多素材剪辑 / 配音配音效 / 文案稿剪片 / 用 TTS 念稿 / 加音效 / 拼视频" and intends to finish in 剪映 on a Mac. Triggers on keywords: 剪映, JianYing, 混剪, 配音, 配音效, TTS, 音效, sfx, voiceover, 文案稿, 草稿, multi-clip mix, macOS video editing.
-license: MIT
-version: 0.2.0
+description: Generate a 剪映 (JianYing Pro) draft on macOS that stitches video clips, synthesizes a TTS voiceover via edge-tts, and auto-places sound effects. Use for 剪映 / 混剪 / 配音 / 配音效 / TTS / 文案稿剪片 / 音效 / sfx / voiceover / 拼视频 / multi-clip mix on macOS.
 ---
 
 # JianYing Pro 多素材混剪 Skill (macOS)
