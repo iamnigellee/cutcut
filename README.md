@@ -1,5 +1,7 @@
 # jianyingpro-mix-edit — 剪映专业版混剪 Skill
 
+> **中文用户使用指南：[docs/USAGE.md](docs/USAGE.md)** —— 第一次怎么装、日常怎么用、跟 AI 怎么发指令。
+
 An [Anthropic Skill](https://github.com/anthropics/skills) for macOS that:
 
 1. Stitches a list of video clips end-to-end.
