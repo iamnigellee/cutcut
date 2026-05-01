@@ -47,6 +47,35 @@ DEFAULT_DRAFT_ROOT = (
 PHOTO_DEFAULT_DURATION_S = 3.0
 
 
+def _populate_meta(draft_dir: Path, draft_name: str, total_us: int) -> None:
+    """Fill draft_meta_info.json fields pyJianYingDraft leaves empty.
+
+    Without this, JianYing self-heals on first scan but the new draft
+    initially appears unnamed and may take a list-refresh before
+    showing up correctly.
+    """
+    import time
+    import uuid
+    meta_path = draft_dir / "draft_meta_info.json"
+    if not meta_path.exists():
+        return
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    now_us = int(time.time() * 1_000_000)
+    # pyJianYingDraft's stub hardcodes the same draft_id for every draft;
+    # generate a fresh one so JianYing doesn't see duplicates.
+    meta["draft_id"] = str(uuid.uuid4()).upper()
+    meta["draft_name"] = draft_name
+    meta["draft_fold_path"] = str(draft_dir)
+    meta["draft_root_path"] = str(draft_dir.parent)
+    meta["tm_draft_create"] = now_us
+    meta["tm_draft_modified"] = now_us
+    meta["tm_duration"] = int(total_us)
+    meta_path.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def s_to_us(seconds: float) -> int:
     return int(round(seconds * 1_000_000))
 
@@ -212,6 +241,8 @@ def build(spec: dict, draft_root: Path) -> dict:
         })
 
     script.save()
+
+    _populate_meta(draft_root / draft_name, draft_name, total_us)
 
     return {
         "draft_name": draft_name,

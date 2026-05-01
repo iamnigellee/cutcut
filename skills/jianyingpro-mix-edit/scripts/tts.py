@@ -75,21 +75,34 @@ async def _synth(script: str, out_mp3: Path, voice: str, rate: str, volume: str)
     edge_tts = _load_edge_tts()
     communicate = edge_tts.Communicate(script, voice=voice, rate=rate, volume=volume)
     out_mp3.parent.mkdir(parents=True, exist_ok=True)
+    # Write to a tmp file and rename atomically so a failed run doesn't
+    # leave a half-written or zero-byte vo.mp3 behind.
+    tmp_mp3 = out_mp3.with_suffix(out_mp3.suffix + ".part")
     events: list[dict] = []
-    with out_mp3.open("wb") as f:
-        async for chunk in communicate.stream():
-            t = chunk.get("type")
-            if t == "audio":
-                f.write(chunk["data"])
-            elif t == "WordBoundary":
-                # edge-tts emits offset/duration in 100ns ticks. Convert to us.
-                events.append(
-                    {
-                        "text": chunk["text"],
-                        "offset_us": int(chunk["offset"]) // 10,
-                        "duration_us": int(chunk["duration"]) // 10,
-                    }
-                )
+    audio_bytes = 0
+    try:
+        with tmp_mp3.open("wb") as f:
+            async for chunk in communicate.stream():
+                t = chunk.get("type")
+                if t == "audio":
+                    f.write(chunk["data"])
+                    audio_bytes += len(chunk["data"])
+                elif t == "WordBoundary":
+                    # edge-tts emits offset/duration in 100ns ticks. Convert to us.
+                    events.append(
+                        {
+                            "text": chunk["text"],
+                            "offset_us": int(chunk["offset"]) // 10,
+                            "duration_us": int(chunk["duration"]) // 10,
+                        }
+                    )
+        if audio_bytes == 0:
+            tmp_mp3.unlink(missing_ok=True)
+            return []
+        tmp_mp3.replace(out_mp3)
+    except BaseException:
+        tmp_mp3.unlink(missing_ok=True)
+        raise
     return events
 
 
