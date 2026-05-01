@@ -1,6 +1,11 @@
 ---
 name: jianyingpro-mix-edit
 description: Generate a 剪映 (JianYing Pro) draft on macOS that stitches video clips, synthesizes a TTS voiceover via edge-tts, and auto-places sound effects. Use for 剪映 / 混剪 / 配音 / 配音效 / TTS / 文案稿剪片 / 音效 / sfx / voiceover / 拼视频 / multi-clip mix on macOS.
+metadata:
+  openclaw:
+    emoji: 🎬
+    requires:
+      anyBins: [ffmpeg]
 ---
 
 # JianYing Pro 多素材混剪 Skill (macOS)

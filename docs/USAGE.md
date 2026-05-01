@@ -19,17 +19,28 @@
 
 ## 第一次使用（一次性，5 分钟）
 
+### OpenClaw（推荐路径）
+
 ```bash
 # 1. 拉代码
 git clone https://github.com/iamnigellee/cutcut ~/code/cutcut
 
-# 2. 接入到 Claude 客户端
-mkdir -p ~/.claude/skills
-ln -s ~/code/cutcut/skills/jianyingpro-mix-edit ~/.claude/skills/jianyingpro-mix-edit
+# 2. 接入 OpenClaw
+mkdir -p ~/.openclaw/skills
+ln -s ~/code/cutcut/skills/jianyingpro-mix-edit ~/.openclaw/skills/jianyingpro-mix-edit
 
 # 3. 装依赖
 brew install ffmpeg
-python3 -m pip install --user -r ~/.claude/skills/jianyingpro-mix-edit/scripts/requirements.txt
+python3 -m pip install --user -r ~/.openclaw/skills/jianyingpro-mix-edit/scripts/requirements.txt
+```
+
+### Claude Code / Claude Desktop
+
+只是把第 2 步的目录换成 `~/.claude/skills/`：
+
+```bash
+mkdir -p ~/.claude/skills
+ln -s ~/code/cutcut/skills/jianyingpro-mix-edit ~/.claude/skills/jianyingpro-mix-edit
 ```
 
 重启客户端。第一次说"用剪映把这些素材混剪一下"，Skill 会自动触发；如果没触发，看[导入排查](#导入失败排查)。

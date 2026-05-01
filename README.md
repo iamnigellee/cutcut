@@ -21,22 +21,30 @@ In both modes, **BGM is added inside 剪映** (剪映 has a great built-in music
 
 ## Install
 
-The skill follows the standard Anthropic Skill layout (`SKILL.md` + bundled scripts + references), so any Claude client that loads skills from `~/.claude/skills/` will pick it up.
+The skill ships with an OpenClaw `metadata` block in its frontmatter, so it loads cleanly in OpenClaw. It also works in Anthropic-native clients (Claude Code, Claude Desktop) that ignore unknown frontmatter keys.
+
+**For OpenClaw (recommended):**
 
 ```bash
-# 1. Clone this repo somewhere persistent.
 git clone https://github.com/iamnigellee/cutcut ~/code/cutcut
 
-# 2. Symlink (or copy) the skill folder into your skills directory.
-mkdir -p ~/.claude/skills
-ln -s ~/code/cutcut/skills/jianyingpro-mix-edit ~/.claude/skills/jianyingpro-mix-edit
+mkdir -p ~/.openclaw/skills
+ln -s ~/code/cutcut/skills/jianyingpro-mix-edit ~/.openclaw/skills/jianyingpro-mix-edit
 
-# 3. Install runtime dependencies.
 brew install ffmpeg
-python3 -m pip install --user -r ~/.claude/skills/jianyingpro-mix-edit/scripts/requirements.txt
+python3 -m pip install --user -r ~/.openclaw/skills/jianyingpro-mix-edit/scripts/requirements.txt
 ```
 
-Restart your Claude client. Ask "用剪映把这些素材混剪一下，文案我给你"，skill 自动触发。
+**For Claude Code / Claude Desktop:**
+
+```bash
+mkdir -p ~/.claude/skills
+ln -s ~/code/cutcut/skills/jianyingpro-mix-edit ~/.claude/skills/jianyingpro-mix-edit
+```
+
+Restart your client. Ask "用剪映把这些素材混剪一下，文案我给你"，skill 自动触发。
+
+If a client doesn't follow symlinks, replace `ln -s` with `cp -R`.
 
 ## Requirements
 
